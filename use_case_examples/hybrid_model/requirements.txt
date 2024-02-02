@@ -1,4 +1,4 @@
 datasets==2.14.4
-apache_beam==2.49.0 
 mwparserfromhell==0.6.4
+python-multipart==0.0.6
 loguru==0.7.0

@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import List, Union
 
 import torch
-from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from concrete.ml.torch.hybrid_model import HybridFHEModel
@@ -27,7 +26,7 @@ def compile_model(
     # Compile hybrid model
     hybrid_model.compile_model(
         inputs,
-        n_bits=8,
+        n_bits=4,
     )
 
     # Save model for serving
@@ -70,17 +69,11 @@ These names might vary according to your model.
     module_names = args.module_names
     model_name = args.model_name
 
-    # Compilation should be done on CPU
-    device = "cpu"
-    print(f"Using device: {device}")
-
     # Get GPT2 from Hugging Face
     model_name_no_special_char = model_name.replace("/", "_")
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        device_map=device,
-        trust_remote_code=True,
     )
 
     configuration = {
@@ -98,34 +91,21 @@ These names might vary according to your model.
     # They should all have the same lengths
     # We might hack something based on HuggingFace dataset with some truncation
     # Without truncation or selection it would require some knowledge of the tokenizer
-    max_context_size = 20
-    num_samples = 50
 
-    dataset = load_dataset("wikipedia", "20220301.en")
-    print(model)
     models_dir = Path(__file__).parent / os.environ.get("MODELS_DIR_NAME", "compiled_models")
     models_dir.mkdir(exist_ok=True)
 
-    # Compile for different shapes
-    for context_size in range(1, max_context_size):
-        prompts = []
-        counter = 0
-        for sample in dataset["train"]:
-            encoded = tokenizer.encode(sample["text"], return_tensors="pt")
-            if encoded.shape[1] >= context_size:
-                counter += 1
-                prompts.append(encoded[:, :context_size])
-            if counter == num_samples:
-                break
-        compile_inputset = torch.cat(prompts).to(device)
-        print(context_size, "compilation")
-        assert isinstance(model, torch.nn.Module)
+    max_context_size = 2
+    text = "Test run. This is just a test run"  
+    encoded_text = tokenizer.encode(text, return_tensors="pt")[:, :max_context_size]
+    assert isinstance(model, torch.nn.Module)
+    print(f"Compiling model {model_name} with {len(encoded_text[0])} tokens")
 
-        # We modify the model in place, so to compile multiple times we need to deepcopy the model
-        compile_model(
-            model_name_no_special_char,
-            deepcopy(model),
-            compile_inputset,
-            module_names,
-            models_dir=models_dir,
-        )
+    # We modify the model in place, so to compile multiple times we need to deepcopy the model
+    compile_model(
+        model_name_no_special_char,
+        deepcopy(model),
+        encoded_text,
+        module_names,
+        models_dir=models_dir,
+    )
